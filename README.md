@@ -39,42 +39,29 @@ offset有如下特点
 - 每个分区维护一套offset，分区与分区的offset互相隔离。
 - 每条消息对应一个offset，并且是唯一的。
 
+## 1.kafka安装
 
+[Kafka官方安装文档](https://kafka.apache.org/quickstart)
 
-## 1.kafka启动
+> kafka的运行依赖于zookeeper，zookeeper的目的主要是用来管理kafka的一些`元数据`信息；比如：opic/分区的元数据、Broker 数据、ACL（Access Control List 访问控制列表） 信息等等。
 
-```
-kafka-topics.bat --create --topic quickstart-events --bootstrap-server localhost:9092
-```
+但是kafka从0.8.2.x开始就在酝酿减少kafka对zookeeper的依赖，因为kafka天然会有大量的读写操作，而zookeeper又天然的不适用于这种高频操作。
 
+## 3.常用配置文件解释
 
+[服务器配置文件](./file/server.properties)
 
-## 2.kafka常用命令
+kafka的broker的参数多达200多个，broker常用的配置文件如下
 
-2.1创建topic
-
-```
-bin/kafka-topics.sh --create --topic quickstart-events --bootstrap-server localhost:9092
-
-
-kafka-topics.bat --create --topic quickstart-events --bootstrap-server localhost:9092
-```
-
-2.2看topic的详情
-
-```
-bin/kafka-topics.sh --describe --topic quickstart-events --bootstrap-server localhost:9092
-```
-
-2.3topic发送信息
-
-```
-kafka-console-producer.sh --topic quickstart-events --bootstrap-server localhost:9092
-```
-
-
-
-## 3.配置文件的讲解
+> log.dirs. 制定日志的位置，可以指定多个，通常设置多个路径挂载在不同的硬盘，这样可以提高读写性能，也能提高容错性。
+>
+> listeners=PLAINTEXT://192.168.0.213:9092  内外访问kafka
+>
+> advertised.listeners=PLAINTEXT://101.89.163.1:9092 外网访问kafka
+>
+> auto.create.topics.enable 是否允许自动创建topic
+>
+> unclean.leader.election.enable  fasle：只允许从isr中选取leader；true：可以选择非isr中的副本作为leader。
 
 官方的介绍
 
