@@ -17,11 +17,11 @@ kafka是一个**高吞吐量、低延迟**的消息队列系统，源码采用**
 
 ## kafka基本术语
 
-主题（topic）、生产者（producer）和分区（partition）
+**主题（topic）、生产者（producer）和分区（partition）**
 
 ![](.\image\2-kafka生产者.png)
 
-消费者（consumer）
+**消费组和消费者**
 
 ![](./image/5-消费者和消费组的关系.png)
 
@@ -30,7 +30,7 @@ kafka是一个**高吞吐量、低延迟**的消息队列系统，源码采用**
 - 一个消费组内可以有1个或者多个消费者。
 - 多个消费组之间的消费互不影响。
 
-offset(偏移量)
+**offset(偏移量)**
 
 ![](./image/6-offset.png)
 
@@ -69,11 +69,139 @@ kafka的broker的参数多达200多个，broker常用的配置文件如下
 https://kafka.apache.org/documentation/#configuration
 ```
 
-
-
 ## 4.kafka的api分类
 
-![](.\image\1-kafka的api分类.png)
+``![](.\image\1-kafka的api分类.png)
+
+## 代码的基本编写
+
+**生产者**
+
+```java
+public void send() {
+        Properties props = new Properties();
+        // kafka集群地址
+        props.put("bootstrap.servers", "localhost:9092");
+        // 同步的策略  0[异步发送], 1[同步leader],  all[副本和leader都给同步到]
+        // https://betterprogramming.pub/kafka-acks-explained-c0515b3b707e
+        props.put("acks", "all");
+        // 发送的超时时间
+        props.put("delivery.timeout.ms", 60000);
+        props.put("request.timeout.ms", 30000);
+        // The producer maintains buffers of unsent records for each partition.
+        props.put("batch.size", 16384);
+        // 每毫秒发送一次和batch.size 配合使用
+        props.put("linger.ms", 1);
+        // 缓存的总内存，当产生的消息比传输的快的时候，这个内存会被快速消耗
+        props.put("buffer.memory", 33554432);
+        props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+        props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
+
+        Producer<String, String> producer = new KafkaProducer<>(props);
+        for (int i = 0; i < 5000; i++){
+            // producer 的send方法本身就是一个异步的方法，所以想要保证每一条数据都发送成功，
+            // 一定要写new Callback 回调方法
+            Future<RecordMetadata> future = producer.send(new ProducerRecord<String, String>("foo-1", Integer.toString(i), "messge"), new Callback() {
+                @Override
+                public void onCompletion(RecordMetadata metadata, Exception e) {
+                    if(e != null) {
+                        // 如果这个发送异常，数据可以保存到数据库，方便下次再发送
+                        e.printStackTrace();
+                    } else {
+                        System.out.println("The offset of the record we just sent is: " + metadata.offset());
+                    }
+                }
+            });
+        }
+
+
+        producer.close();
+    }
+```
+
+**消费者**
+
+自动提交
+
+```java
+public void consumerAutoCommit() {
+        Properties props = new Properties();
+        // 设置从哪里消费 earliest[有提交offset，从提交位置，没有从头开始],latest[有提交的offset，从offset消费，等待新消息]
+        props.put("auto.offset.reset","earliest");
+        props.put("bootstrap.servers", "localhost:9092");
+        // 消费组
+        props.put("group.id", "test");
+        // 开启自动提交
+        props.put("enable.auto.commit", "true");
+        // 每隔多少ms来提交一次offset
+        props.put("auto.commit.interval.ms", "1000");
+        // 每次拉取的最大条数 默认为500
+        props.put("max.poll.records",500);
+        props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+        props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+        KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
+        // 订阅的topic
+        consumer.subscribe(Arrays.asList("foo-1"));
+        while (true) {
+            // 在100ms内pull数据，如果没有拉取到返回空集合
+            ConsumerRecords<String, String> records = consumer.poll(Duration.ofMillis(100));
+
+            for (ConsumerRecord<String, String> record : records){
+                try {
+                    Thread.sleep(100);
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                System.out.printf("offset = %d, key = %s, value = %s%n", record.offset(), record.key(), record.value());
+            }
+        }
+    }
+```
+
+> 自动提交的优点：不用进行手动的提交offset，方便进行管理。
+>
+> 缺点：
+>
+> 1. 可能会重复消费消息。
+> 2. 比如你处理逻辑比较长，这期间自动提交offset已经完成，但是这个时候消费者发送异常了，那么这就可能造成部分数据没有被消费掉而产生"数据丢失"的错觉。
+
+手动提交
+
+```java
+public void consumerManualCommit() {
+        Properties props = new Properties();
+        props.put("bootstrap.servers", "localhost:9092");
+        props.put("group.id", "test");
+        props.put("enable.auto.commit", "false");
+        props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+        props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
+        KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
+        consumer.subscribe(Arrays.asList("foo", "bar"));
+        final int minBatchSize = 200;
+        List<ConsumerRecord<String, String>> buffer = new ArrayList<>();
+        while (true) {
+            ConsumerRecords<String, String> records = consumer.poll(100);
+            for (ConsumerRecord<String, String> record : records) {
+                // 比如这里有大量的业务逻辑
+                buffer.add(record);
+            }
+            if (buffer.size() >= minBatchSize) {
+                consumer.commitSync();
+                buffer.clear();
+            }
+        }
+    }
+```
+
+> commitSync手动提交优点：可以人为的控制offset的提交，消费失败则不提交。
+>
+> commitSync手动提交缺点：当提交的时候，consumer阻塞的，从而影响consumer的效率。
+
+
+
+> 需要注意的是，kafka的生产者是线程安全的，但是消费者却是线程不安全的，不建议多线程来进行来对同时对一个或者多个consumer来进行共同的操作。
+>
+> 一般开发中都适用一个线程对应一个消费者。
 
 
 
@@ -320,3 +448,11 @@ https://alibaba-cloud.medium.com/kafka-vs-rocketmq-multiple-topic-stress-test-re
 消费者消费完100w条数据的性能如下：
 
 ![](./image/8-消费性能测试.png)
+
+
+
+
+
+疑问
+
+1. 如果消费者的自动提交时间特别长，而拉去的数据特别少，比如1条，那么会消费吗？
