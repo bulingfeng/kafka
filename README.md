@@ -452,7 +452,22 @@ https://alibaba-cloud.medium.com/kafka-vs-rocketmq-multiple-topic-stress-test-re
 
 
 
+关于kakfa在未来取消zookeeper而采用KRaft
+```aidl
+https://www.infoq.com/news/2022/10/apache-kafka-kraft/
+```
+
+acks的解释
+```
+https://betterprogramming.pub/kafka-acks-explained-c0515b3b707e
+```
+
+参考资料
+
+```
+https://blog.51cto.com/u_15287666/3105825#21_broker_14
+```
 
 疑问
 
-1. 如果消费者的自动提交时间特别长，而拉去的数据特别少，比如1条，那么会消费吗？
+1. 如果消费者的自动提交时间特别长，而拉去的数据特别少，比如1条，那么消费完这一条数据，consumer还会继续消费吗？
