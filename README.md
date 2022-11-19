@@ -518,7 +518,7 @@ https://blog.csdn.net/shijinghan1126/article/details/104724407
 
 kakfa在未来会取消zookeeper而采用KRaft
 
-```aidl
+```text
 https://www.infoq.com/news/2022/10/apache-kafka-kraft/
 ```
 
