@@ -302,6 +302,10 @@ public void consumerManualCommit() {
 
 ### 8.1 使用回调函数来确认producer一定把消息发送到broker中
 
+> 并且设置acks=all;这样能保证isr分区中的所有副本都能够同步到该数据。
+>
+> 如果只是设置acks=1,可能会因为leader副本的无法访问而造成"数据丢失".
+
 ```java
 @Override
 public void send() {
@@ -340,9 +344,11 @@ public void onCompletion(RecordMetadata metadata, Exception exception) {
         }
 ```
 
-### 8.2 consumer端消费异常却offset提交成功
+### 8.2 Consumer端消费异常却offset提交成功
 
-> 比如现在一个topic-a有5个partition，同时有5个consumer来进行消费，并且这5个消费者提交offset的方式为自动提交。
+> 这个的前提是消费端设置的参数为自动提交。
+>
+> 比如现在一个topic有5个partition，同时有5个consumer来进行消费，并且这5个消费者提交offset的方式为自动提交。
 >
 > 这个时候比如有一个consumer处理数据异常，而这个时候自动提交的时间已到，从而提交了这一批数据的offset，从而造成"消息丢失"。从表面看起来像消息丢失而已，其实是因为处理消费的策略有问题。
 >
@@ -352,19 +358,23 @@ public void onCompletion(RecordMetadata metadata, Exception exception) {
 
 ### 8.3 主题增加分区
 
-当增加主题的分区后，producer会优先于consumer感知到新增的分区，而这个时候consumer设置的是消费策略是`auto.offset.reset=latest`。这个时候由于consumer感知新增的分区比较慢，就会出现有一部分消息无法消费掉。
+当增加主题的分区后，producer会优先于consumer感知到新增的分区，而这个时候consumer设置的是消费策略恰好又是`auto.offset.reset=latest`。这个时候由于consumer感知新增的分区比较慢，就会出现有一部分消息无法消费掉。
 
 > 解决方案：
 > 1.针对新增的分区开一个专门的consumer，并设置消费的策略为earlist来进行消费.
 > 2.实现一个ConsumerRebalanceListener，重写onPartitionsAssigned方法，每次取offset都从数据库中读取，如果能取到则说是已有分区，否则则是新的分区，则从该分区的offset=0开始消费。
 
-8.4 如果有些数据突然消费不到
+### 8.4 如果有些数据突然消费不到
 
-> 可以查看kafka中消息的过期时间；kafka消息默认过期时间为7天；
+比如昨天消费数据还是正常的，说明topic里面一定是有数据的；但是今天消费同样的一批数据，发现数据无法被消费到。
+
+> 可以查看kafka中消息的过期时间，检查昨天的数据是否过期；
 >
-> 比如昨天消费数据还是正常的，说明topic里面一定是有数据的；但是今天消费同样的一批数据，发现数据无法被消费到，这个时候很有可能就是昨天的数据到达来规定的过期时间，而失效了。
+> kafka消息默认过期时间为7天；
 
 ## 9. Rebalance现象
+
+> Rebalance现象就是消费者重新获得具体消费哪些分区的过程。
 
 假设目前某个 Consumer Group 下有两个 Consumer，比如 A 和 B，当第三消费者 C 加入时，Kafka 会触发 Rebalance，并根据默认的分配策略重新为 A、B 和 C 分配分区，如下图所示：
 
@@ -381,11 +391,16 @@ public void onCompletion(RecordMetadata metadata, Exception exception) {
 > 1. 分区的数量变化。
 > 2. 消费组中的消费者数量发生变化。
 > 3. 订阅的主题数发生变化(一个consumer可以订阅多个主题)。
-> 4. 由于网络抖动让consumer和broker之间的心跳发生了断裂，这时候consumer会被踢出去。
+>
+>    Consumer Group 可以使用正则表达式的方式订阅主题，比如 `consumer.subscribe(Pattern.compile(“t.*c”))` 就表明该 Group 订阅所有以字母 t 开头、字母 c 结尾的主题。在 Consumer Group 的运行过程中，你新创建了一个满足这样条件的主题，那么该 Group 就会发生 Rebalance
+>
+> 4. 由于网络抖动让consumer和broker之间的心跳发生了断裂，这时候无法连接心跳的consumer会被从消费组内踢出去。
 
-如何避免尽可能的避免发生rebalance的发生，分区数的改变，和订阅主题数的改变，这里问题我们暂时不做考虑，因为这是由于我们业务需要而发生改变而引起的，我们重点分析是由于consumer端的问题导致的rebalance。
+如何尽可能的避免发生rebalance的发生呢？
 
-下面是三种方式来进行改善rebalance的情况，请注意只是改善而已....
+分区数的改变，和订阅主题数的改变，这里问题我们暂时不做考虑，因为这是由于我们业务需要而发生改变而引起的，我们重点分析是由于consumer端的问题导致的rebalance。
+
+下面是三种方式来进行改善rebalance的情况，请**注意只是改善而已**....
 
 第一种
 
@@ -400,22 +415,24 @@ public void onCompletion(RecordMetadata metadata, Exception exception) {
 
 第二种
 
-> 由于kafka的消费逻辑太长，解决方案如下:
+> 由于kafka的消费逻辑太长，而造成broker认为此consumer已经死亡，从而引发的rebalance，解决方案如下:
 >
 > - 设置max.poll.interval.ms长一些，比如处理逻辑需要10分钟，你设置成15分钟。
 > - 设置max.poll.records的最大条数小一些，从而造成消费的逻辑短一些。
 
 第三种
 
-> consumer端频繁的发生full GC也会引发，rebalance。
+> consumer端频繁的发生full GC也会引发，也有可能发生rebalance。因为full gc造成jvm的stop the world，从而造成broker认为消费者已经死亡。
 >
-> 所以可以检查consumer端是否频繁发生了full GC。
+> 解决方案：
+>
+> > 检查consumer端是否频繁发生了full GC。
 
 第四种
 
 > 当consumer不指定消费具体哪个分区的时候，才会引发rebalance.所以我们可以让consumer来消费某个分区的数据。
 >
-> 但是此方案可能会造成某个consumer服务宕机，从而造成某个分区的数据暂时不会被消费掉。
+> 但是此方案可能会造成某个consumer服务宕机，从而造成某个分区的数据不会被消费掉。
 
 代码如下
 
@@ -452,19 +469,19 @@ public void onCompletion(RecordMetadata metadata, Exception exception) {
 
 ### 11.1 kafka优势
 
-> 1. 采用顺序写盘和0拷贝等技术实现高速写盘。
-> 2. kafka类似一个数据的日志文件，你可以无限制的反复消费，而有些mq，比如activemq消费完就会把该数据从磁盘上移除掉。
-> 3. 可以实现海量数据的堆积，这也是为何日志收集会首选kafka的原因。
+> 1. 采用顺序写盘和0拷贝等技术实现高速写盘。kafka可以实现百万级别的的写入速度，秒杀其他mq。
+> 2. kafka简单理解，它就是一个日志文件，你可以无限制的反复消费。而有些mq不支持重复消费历史数据，比如activemq。
+> 3. 可以实现海量数据的堆积（因为它本身就是一个日志文件的存储），这也是为何日志收集会首选kafka的原因。
 > 4. 生产和消费的最小单位为partition，可以通过增加partition的数量来增加系统的吞吐量。
 
 ### 11.2 kafka劣势
 
-> 1. 相比于其他消费队列其本身偏重，比较消化资源，特别是内存。
+> 1. 相比于其他消费队列其本身偏重，比较消耗资源，特别是内存。
 > 2. 缺失一些特性，比如事务的特性（kafka也确实有事务，但是他的事务是发送数据要不都成功，要么都失败，而不是业务上的事务）。
 
-## 12. 关于kafka和rocketmq对比的一些错误言论
+## 12. 关于Kafka和Rocketmq对比的一些错误言论
 
-甚至有些阿里官方描述kafka和rocketmq的对比也是有待商榷
+甚至有些阿里官方描述kafka和rocketmq的对比也有迷惑性的
 
 ```
 https://alibaba-cloud.medium.com/kafka-vs-rocketmq-multiple-topic-stress-test-results-d27b8cbb360f
@@ -484,6 +501,12 @@ https://alibaba-cloud.medium.com/kafka-vs-rocketmq-multiple-topic-stress-test-re
 
 ![](./image/8-消费性能测试.png)
 
+> 因为现实中，没有人用kafka的单点，即使是单点也没有会开256个partition。
+>
+> > 因为一旦开这么多的partition，肯定不用用单点的；
+> >
+> > 这就是rockemq测试为了测试而测试，根本不符合实际的应用场景。
+
 其他一些关于kafka介绍的很多都是错误的文章
 
 ```
@@ -499,9 +522,8 @@ kakfa在未来会取消zookeeper而采用KRaft
 https://www.infoq.com/news/2022/10/apache-kafka-kraft/
 ```
 
-
-
 ## 14 文章参考
 
 - [kafka选举过程](https://cloud.tencent.com/developer/article/1790732)
 - 《深入理解kafka》
+- [BigData-Tutorial](https://dunwu.github.io/bigdata-tutorial/#zookeeper)
