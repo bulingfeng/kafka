@@ -1,6 +1,6 @@
 ## 1.kafka是什么?
 
-kafka是一个**高吞吐量、低延迟**的消息队列系统，源码采用**java（客户端）和scala（服务端）**来进行编写。
+kafka是一个**高吞吐量、低延迟**的消息队列系统，源码由**java（客户端）和scala（服务端）**语言编写。
 
 ## 2.kafka有哪些优势
 
@@ -9,7 +9,7 @@ kafka是一个**高吞吐量、低延迟**的消息队列系统，源码采用**
 >The key fact about disk performance is that the throughput of hard drives has been diverging from the latency of a disk seek for the last decade. As a result the performance of linear writes on a [JBOD](http://en.wikipedia.org/wiki/Non-RAID_drive_architectures) configuration with six 7200rpm SATA RAID-5 array is about **600MB/sec** but the performance of random **writes is only about 100k/sec**—a difference of over 6000X.
 
 2、多分区的机制可以让kafka拥有足够的扩展性。
-3、有完整的生态，特别是大数据领域。
+3、有完整的生态，特别是大数据领域（能够保存大量的数据比如PB级别的数据）。
 
 4、活跃的社区环境，有利于kafka长期的迭代。
 
@@ -19,7 +19,7 @@ kafka是一个**高吞吐量、低延迟**的消息队列系统，源码采用**
 
 ![](.\image\2-kafka生产者.png)
 
-### 3.2 消费组和消费者
+### 3.2 消费者与消费组
 
 ![](./image/5-消费者和消费组的关系.png)
 
@@ -34,10 +34,10 @@ kafka是一个**高吞吐量、低延迟**的消息队列系统，源码采用**
 
 offset有如下特点
 
-- 每个分区维护一套offset，分区与分区的offset互相隔离。
+- 每个消费组中的每个分区维护一套offset，分区与分区的offset互相隔离。
 - 每条消息对应一个offset，并且是唯一的。
 
-### 3.4 消费组
+### 3.4 消费组详解
 
 > kafka消费组就是一个组内可以有一个或者多个消费者。而消费组与消费组之间的消费是没有任何关系，两个不同的消费组之间消费互不影响。
 
@@ -65,19 +65,21 @@ offset有如下特点
 
 ![](./image/consumer-group/5-消费组之间关系.png)
 
-## 4.kafka安装
+## 4.kafka安装与依赖组件
 
 [Kafka官方安装文档](https://kafka.apache.org/quickstart)
 
 > kafka的运行依赖于zookeeper，zookeeper的目的主要是用来管理kafka的一些`元数据`信息；比如：opic/分区的元数据、Broker 数据、ACL（Access Control List 访问控制列表） 信息等等。
 >
-> 比如安装包`kafka_2.12-3.3.1.tgz`，其中2.12代表的是本安装包是采用2.12版本的scala进行编译的，3.3.1才是kafka的真正版本号。
+> kafka安装包版本号解释
+>
+> > 安装包`kafka_2.12-3.3.1.tgz`，其中2.12代表的是本安装包是采用2.12版本的scala进行编译的，3.3.1才是kafka的真正版本号。
 
 小提示
 
-> 虽然现在kafka还是依赖于zookeeper，但是从kafka从0.8.2.x开始就在酝酿减少kafka对zookeeper的依赖，因为kafka天然会有大量的读写操作，而zookeeper又天然的不适用于这种高频操作。
+> 虽然现在kafka还是依赖于zookeeper，但是从kafka从0.8.2.x开始就在酝酿逐渐减少kafka对zookeeper的依赖，因为kafka天然会有大量的读写操作，而zookeeper又天然的不适用于这种高频操作。
 >
-> 比如原来维护offset都是交给zookeeper来完成的，现在的kafka版本都是有broker来统一维护offset了。
+> 比如原来维护offset都是交给zookeeper来完成的，现在的kafka版本都是有broker来统一维护offset。
 
 ## 5.常用配置文件解释
 
@@ -87,7 +89,7 @@ kafka的broker的参数多达200多个，broker常用的配置文件如下
 
 > log.dirs. 制定日志的位置，可以指定多个，通常设置多个路径挂载在不同的硬盘，这样可以提高读写性能，也能提高容错性。
 >
-> listeners=PLAINTEXT://192.168.0.213:9092  内外访问kafka
+> listeners=PLAINTEXT://192.168.0.213:9092  内网访问kafka
 >
 > advertised.listeners=PLAINTEXT://101.89.163.1:9092 外网访问kafka
 >
@@ -110,14 +112,14 @@ https://kafka.apache.org/documentation/#configuration
 ```java
 public void send() {
         Properties props = new Properties();
-        // kafka集群地址
+        // kafka集群地址，多个地址使用","分割
         props.put("bootstrap.servers", "localhost:9092");
-        // 同步的策略  0[异步发送], 1[同步leader],  all[副本和leader都给同步到]
+        // 同步的策略  0[异步发送], 1[同步leader],  all[副本和leader都给同步到][-1]
         // https://betterprogramming.pub/kafka-acks-explained-c0515b3b707e
         props.put("acks", "all");
         // total time between sending a record and receiving acknowledgement from the broker.
         props.put("delivery.timeout.ms", 60000);
-  			// 请求超时时间，用来控制重试
+  			// 请求超时时间，用来控制重试;必须设置 delivery.timeout.ms > request.timeout.ms
         props.put("request.timeout.ms", 30000);
         // The producer maintains buffers of unsent records for each partition.
         props.put("batch.size", 16384);
@@ -131,12 +133,12 @@ public void send() {
         Producer<String, String> producer = new KafkaProducer<>(props);
         for (int i = 0; i < 5000; i++){
             // producer 的send方法本身就是一个异步的方法，所以想要保证每一条数据都发送成功，
-            // 一定要写new Callback 回调方法
+            // 一定要写回调方法来确认是否发送成功
             Future<RecordMetadata> future = producer.send(new ProducerRecord<String, String>("foo-1", Integer.toString(i), "messge"), new Callback() {
                 @Override
                 public void onCompletion(RecordMetadata metadata, Exception e) {
                     if(e != null) {
-                        // 如果这个发送异常，数据可以保存到数据库，方便下次再发送
+                        // 如果这个发送异常，数据可以数据库，方便下次再发送
                         e.printStackTrace();
                     } else {
                         System.out.println("The offset of the record we just sent is: " + metadata.offset());
@@ -157,7 +159,7 @@ public void send() {
 ```java
 public void consumerAutoCommit() {
         Properties props = new Properties();
-        // 设置从哪里消费 earliest[有提交offset，从提交位置，没有从头开始],latest[有提交的offset，从offset消费，等待新消息]
+        // 设置消费的位置 earliest[有提交offset，从提交位置，没有从头开始],latest[有提交的offset，从offset消费，等待新消息]
         props.put("auto.offset.reset","earliest");
         props.put("bootstrap.servers", "localhost:9092");
         // 消费组
@@ -171,7 +173,7 @@ public void consumerAutoCommit() {
         props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
         props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
         KafkaConsumer<String, String> consumer = new KafkaConsumer<>(props);
-        // 订阅的topic
+        // 订阅的topic[也可以订阅多个topic] 但是通常订阅一个topic
         consumer.subscribe(Arrays.asList("foo-1"));
         while (true) {
             // 在100ms内pull数据，如果没有拉取到返回空集合
@@ -179,6 +181,7 @@ public void consumerAutoCommit() {
 
             for (ConsumerRecord<String, String> record : records){
                 try {
+                  // 模拟逻辑消费
                     Thread.sleep(100);
                 } catch (InterruptedException e) {
                     throw new RuntimeException(e);
@@ -193,7 +196,7 @@ public void consumerAutoCommit() {
 >
 > 缺点：
 >
-> 1. 可能会重复消费消息。
+> 可能会重复消费消息。比如有每5秒中自动提交一次offset，并且在这期间拉取到100条消息准备消费，但是在当消费到第99条数据的时候，consumer死掉了，那么下次启动的时候，前98条数据又需要被重复消费一遍了。
 
 #### 手动提交
 
@@ -202,6 +205,7 @@ public void consumerManualCommit() {
         Properties props = new Properties();
         props.put("bootstrap.servers", "localhost:9092");
         props.put("group.id", "test");
+  			// 改成手动提交
         props.put("enable.auto.commit", "false");
         props.put("key.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
         props.put("value.deserializer", "org.apache.kafka.common.serialization.StringDeserializer");
@@ -229,13 +233,13 @@ public void consumerManualCommit() {
 > commitSync手动提交缺点：
 >
 > 1. 当提交的时候，consumer阻塞的，从而影响consumer的效率。
-> 2. 由于offset完全交给开发者来操作，要注意开发的规范。比如由于先提交了offset再消费数据，从而造成这一批数据中有数据处理逻辑发生异常，而这些数据无法再被消费成功。
+> 2. 由于offset完全交给开发者来操作，要注意开发的规范。比如由于先提交了offset再消费数据，从而造成这一批数据过程中发生处理逻辑发生异常，这就会造成发生异常之后的一批数据没有被消费掉。而又由于offset被提交而这个消费组再也消费不到了。
 
 #### 关于线程安全问题
 
 > kafka的生产者是线程安全的，但是消费者却是线程不安全的，不建议多线程来进行来对同时对一个consumer来进行消费。
 >
-> 一般开发中多个消费者的时候建议一个线程对应一个consumer，这样编写代码简单出错了也容易排查。
+> 一般开发中多个消费者的时候建议一个线程对应一个consumer，这样编写代码逻辑简单，并且就算出错了也容易排查。
 >
 > > 当然特殊情况下，也可以使用多个线程来对consumer来进行消费，因为这样能够加快消费的效率。
 
@@ -477,5 +481,4 @@ kakfa在未来会取消zookeeper而采用KRaft
 ```aidl
 https://www.infoq.com/news/2022/10/apache-kafka-kraft/
 ```
-
 
