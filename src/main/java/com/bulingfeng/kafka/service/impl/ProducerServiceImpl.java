@@ -1,10 +1,7 @@
 package com.bulingfeng.kafka.service.impl;
 
 import com.bulingfeng.kafka.service.ProducerService;
-import org.apache.kafka.clients.producer.KafkaProducer;
-import org.apache.kafka.clients.producer.Producer;
-import org.apache.kafka.clients.producer.ProducerRecord;
-import org.apache.kafka.clients.producer.RecordMetadata;
+import org.apache.kafka.clients.producer.*;
 import org.springframework.stereotype.Service;
 
 import java.util.Properties;
@@ -40,14 +37,14 @@ public class ProducerServiceImpl implements ProducerService {
 
         Producer<String, String> producer = new KafkaProducer<>(props);
         for (int i = 0; i < 5000; i++){
-            Future<RecordMetadata> future = producer.send(new ProducerRecord<String, String>("foo-1", Integer.toString(i), "For use cases where message processing time varies unpredictably, neither of these options may be sufficient. The recommended way to handle these cases is to move message processing to another thread, which allows the consumer to continue calling poll while the processor is still working. Some care must be taken to ensure that committed offsets do not get ahead of the actual position. Typically, you must disable automatic commits and manually commit processed offsets for records only after the thread has finished handling them (depending on the delivery semantics you need). Note also that you will need to pause the partition so that no new records are received from poll until after thread has finished handling those previously returned"));
-            try {
-                RecordMetadata recordMetadata = future.get();
-            } catch (InterruptedException e) {
-                throw new RuntimeException(e);
-            } catch (ExecutionException e) {
-                throw new RuntimeException(e);
-            }
+            Future<RecordMetadata> future = producer.send(new ProducerRecord<String, String>("foo-1", Integer.toString(i), "kafka" + i), new Callback() {
+                @Override
+                public void onCompletion(RecordMetadata metadata, Exception exception) {
+                    if (exception==null){
+                        System.out.printf("发送成功");
+                    }
+                }
+            });
         }
 
 
