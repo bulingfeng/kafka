@@ -499,3 +499,9 @@ kakfa在未来会取消zookeeper而采用KRaft
 https://www.infoq.com/news/2022/10/apache-kafka-kraft/
 ```
 
+
+
+## 14 文章参考
+
+- [kafka选举过程](https://cloud.tencent.com/developer/article/1790732)
+- 《深入理解kafka》
