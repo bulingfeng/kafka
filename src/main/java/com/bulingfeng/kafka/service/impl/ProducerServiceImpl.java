@@ -34,14 +34,14 @@ public class ProducerServiceImpl implements ProducerService {
         props.put("buffer.memory", 33554432);
         props.put("key.serializer", "org.apache.kafka.common.serialization.StringSerializer");
         props.put("value.serializer", "org.apache.kafka.common.serialization.StringSerializer");
-
+        String topic="2022-11-20";
         Producer<String, String> producer = new KafkaProducer<>(props);
         for (int i = 0; i < 5000; i++){
-            Future<RecordMetadata> future = producer.send(new ProducerRecord<String, String>("foo-1", Integer.toString(i), "kafka" + i), new Callback() {
+            Future<RecordMetadata> future = producer.send(new ProducerRecord<String, String>(topic, Integer.toString(i), "kafka" + i), new Callback() {
                 @Override
                 public void onCompletion(RecordMetadata metadata, Exception exception) {
                     if (exception==null){
-                        System.out.printf("发送成功");
+                        System.out.println("发送成功");
                     }
                 }
             });
