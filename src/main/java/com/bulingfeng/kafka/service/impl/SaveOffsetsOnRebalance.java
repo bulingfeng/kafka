@@ -8,6 +8,10 @@ import org.springframework.stereotype.Service;
 
 import java.util.Collection;
 
+/**
+ * 参考文章
+ * https://www.cnblogs.com/EnzoDin/p/12642128.html
+ */
 
 public class SaveOffsetsOnRebalance implements ConsumerRebalanceListener {
 
@@ -22,10 +26,6 @@ public class SaveOffsetsOnRebalance implements ConsumerRebalanceListener {
 
     }
 
-    public void onPartitionsLost(Collection<TopicPartition> partitions) {
-        System.out.println(partitions);
-        // do not need to save the offsets since these partitions are probably owned by other consumers already
-    }
 
     public void onPartitionsAssigned(Collection<TopicPartition> partitions) {
         // read the offsets from an external store using some custom code not described here
