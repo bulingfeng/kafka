@@ -4,16 +4,16 @@ kafka是一个**高吞吐量、低延迟**的消息队列系统，源码由**jav
 
 ## 2.kafka有哪些优势
 
-1、吞吐量即高；得益于0拷贝和顺序写盘。
+1、吞吐量相当高；得益于[zero-copy](https://zh.m.wikipedia.org/zh-hans/%E9%9B%B6%E5%A4%8D%E5%88%B6)和顺序刷盘。
 
 >The key fact about disk performance is that the throughput of hard drives has been diverging from the latency of a disk seek for the last decade. As a result the performance of linear writes on a [JBOD](http://en.wikipedia.org/wiki/Non-RAID_drive_architectures) configuration with six 7200rpm SATA RAID-5 array is about **600MB/sec** but the performance of random **writes is only about 100k/sec**—a difference of over 6000X.
 
-2、多分区的机制可以让kafka拥有足够的扩展性。
+2、多分区的机制可以让kafka拥有灵活的拓展性，并且能提高kafka的吞吐量。
 3、有完整的生态，特别是大数据领域（能够保存大量的数据比如PB级别的数据）。
 
-4、活跃的社区环境，有利于kafka长期的迭代。
+4、活跃的社区环境，当我们遇到问题的时候可以求助于社区，如果是bug的话社区也会进行快速修复。
 
-## 3.kafka基本术语
+## 3.kafka基本概念
 
 ### 3.1 主题（topic）、生产者（producer）和分区（partition）
 
@@ -69,7 +69,7 @@ offset有如下特点
 
 [Kafka官方安装文档](https://kafka.apache.org/quickstart)
 
-> kafka的运行依赖于zookeeper，zookeeper的目的主要是用来管理kafka的一些`元数据`信息；比如：opic/分区的元数据、Broker 数据、ACL（Access Control List 访问控制列表） 信息等等。
+> kafka的运行依赖于zookeeper，zookeeper的目的主要是用来管理kafka的一些`元数据`信息；比如：topic主题和分区的元数据、Broker 数据、ACL（Access Control List 访问控制列表） 信息等等。
 >
 > kafka安装包版本号解释
 >
@@ -79,9 +79,9 @@ offset有如下特点
 
 > 虽然现在kafka还是依赖于zookeeper，但是从kafka从0.8.2.x开始就在酝酿逐渐减少kafka对zookeeper的依赖，因为kafka天然会有大量的读写操作，而zookeeper又天然的不适用于这种高频操作。
 >
-> 比如原来维护offset都是交给zookeeper来完成的，现在的kafka版本都是有broker来统一维护offset。
+> 比如原来以前的kafka中维护offset都是交给zookeeper来完成的，现在的kafka版本都是有broker来统一维护offset。
 
-## 5.常用配置文件解释
+## 5.常用配置解释
 
 [服务器配置文件](./file/server.properties)
 
@@ -95,7 +95,7 @@ kafka的broker的参数多达200多个，broker常用的配置文件如下
 >
 > auto.create.topics.enable 是否允许自动创建topic
 >
-> unclean.leader.election.enable  fasle：只允许从isr中选取leader；true：可以选择非isr中的副本作为leader。
+> unclean.leader.election.enable  fasle：只允许从isr中选取leader副本；true：可以选择非isr中的副本作为leader副本。
 
 官方的介绍
 
@@ -132,7 +132,7 @@ public void send() {
 
         Producer<String, String> producer = new KafkaProducer<>(props);
         for (int i = 0; i < 5000; i++){
-            // producer 的send方法本身就是一个异步的方法，所以想要保证每一条数据都发送成功，
+            // producer 的send方法本身就是一个异步的方法，所以想要知道每一条数据是否发送成功，
             // 一定要写回调方法来确认是否发送成功
             Future<RecordMetadata> future = producer.send(new ProducerRecord<String, String>("foo-1", Integer.toString(i), "messge"), new Callback() {
                 @Override
@@ -196,8 +196,14 @@ public void consumerAutoCommit() {
 >
 > 缺点：
 >
-> 1. 可能会重复消费消息。比如有每5秒中自动提交一次offset，并且在这期间拉取到100条消息准备消费，但是在当消费到第99条数据的时候，consumer死掉了，那么下次启动的时候，前98条数据又需要被重复消费一遍了。
-> 2. 可能会"丢失数据"，比如拉取到100条数据，提交时间已到，就把这100条数据的offset给提交了，但是业务处理到88条的时候异常了，那么89条-100条的数据发生了“丢失”。
+> 1. 可能会重复消费消息。比如有每5秒中自动提交一次offset，并且在这期间拉取到100条消息准备消费，时间经过了4.5秒，并且这时候消费了88条数据，然后consumer挂掉了，那么下次启动的时候，前88条数据又需要被重复消费一遍了。
+> 2. 可能会"丢失数据"，比如拉取到100条数据，当消费到66条数据的时候，提交时间已到，就把这100条数据的offset给提交了，但是业务处理到88条的时候异常了，那么89条-100条的数据发生了“丢失”。
+>
+> 所以我们一般对于比较敏感的数据不建议使用自动提交，比如财务数据等等。
+>
+> 自动提交造成的数据重复消费和数据丢失文章
+>
+> > https://cloud.tencent.com/developer/article/1786809
 
 #### 手动提交
 
@@ -222,6 +228,7 @@ public void consumerManualCommit() {
             }
           // 一般认为kafka是一个无限消费的队列，所以没有对records%minBatchSize有余数的数据继续处理
             if (buffer.size() >= minBatchSize) {
+              // 如果这个提交offset失败了，可以把这200条数据给留存下来，方便分析
                 consumer.commitSync();
                 buffer.clear();
             }
@@ -229,16 +236,13 @@ public void consumerManualCommit() {
     }
 ```
 
-> commitSync手动提交优点：可以人为的控制offset的提交，消费失败则不提交，从而实现精确控制。
+> commitSync手动提交优点：可以人为的控制offset的提交，并且当消费失败的时候能够知道是哪些数据消费失败了，从而实现精确控制。
 >
 > commitSync手动提交缺点：
 >
-> 1. 当提交的时候，consumer阻塞的，从而影响consumer的效率。
-> 2. 由于offset完全交给开发者来操作，要注意开发的规范。比如由于先提交了offset再消费数据，从而造成这一批数据过程中发生处理逻辑发生异常，这就会造成发生异常之后的一批数据没有被消费掉。而又由于offset被提交而这个消费组再也消费不到了。
+> 1. 当提交的时候，consumer阻塞的，从而影响consumer的消费效率。
+> 2. 由于offset完全交给开发者来操作，这就需要开发者遵守开发的规范。比如由于先提交了offset再消费数据，从而造成这一批数据过程中发生处理逻辑发生异常，这就会造成发生异常之后的数据没有被消费掉。而又由于offset被提交而这个消费组再也消费不到了。
 >
-> 自动提交引发的重复消费和"消息丢失":
->
-> > https://cloud.tencent.com/developer/article/1786809
 
 #### 关于线程安全问题
 
@@ -246,11 +250,11 @@ public void consumerManualCommit() {
 >
 > 一般开发中多个消费者的时候建议一个线程对应一个consumer，这样编写代码逻辑简单，并且就算出错了也容易排查。
 >
-> > 当然特殊情况下，也可以使用多个线程来对consumer来进行消费，因为这样能够加快消费的效率。
+> > 当然特殊情况下，比如一些对消费效率要求高的系统，可以考虑使用多个线程来对consumer来进行消费，从而提高消费的效率。
 
 一般采取的消费策略为：
 
-> 宁可重复消费也不要让消息遗失而消费不到。
+> 宁可重复消费也不要让消息遗失而消费不到。因为我们可以在消费端做“数据重复”的处理，比如把消费过的数据的key放入到redis中。
 
 ## 7.副本机制
 
@@ -260,51 +264,50 @@ public void consumerManualCommit() {
 
 > 1. 提供数据冗余；比如hadoop，elasticsearch。
 > 2. 提供高伸缩性；支持横行拓展，能够通过加机器的方式来提高读操作的性能。比如elasticsearch.
-> 3. 允许将数据放入与用户地理位置相近的地方，从而降低系统延时。比如sprak计算拿数据的时候，会从距离自己最近的机器拿数据。
+> 3. 允许将数据放入与用户地理位置相近的地方，从而降低系统延时。比如sprak计算拿数据的时候，会从距离自己最近的服务器拿数据。
 
 遗憾的是kafka中的副本只能提供`数据冗余`这一个特性。
 
 > 因为kafka的所有的读写操作都是通过一个叫`Leader`的副本来完成的，而其他的kafka的副本是不对外提供服务的，他们只提供数据冗余。
 >
-> 虽然kafka的副本不对外不提供数据，但是这些副本可以从leader拉取数据并同步，从而作为leader的备份。
+> 虽然kafka的副本不对外不提供数据，但是这些副本可以从leader拉取数据并同步，从而作为leader的备胎。
 
 副本的同步机制如下：
 
 ![](./image/9-副本复制数据机制.png)
 
-只让leader副本来提供数据服务有如下的优势：
+虽然leader副不能对外提供数据服务，但是也带来了一些好处，比如：
 
 > 1. 能够方便用户实时读取到刚才producer生产的数据；比如mysql的主从复制，从节点只用来读数据，那么有可能产生写入数据成功，但是读数据发现没有该数据。
 > 2. 方便实现单调读，即不会出现一条数据一会在一会在的情况。比如当前有R1和R2两个副本，其中R1副本已经同步到数据A，但是R2并没有同步到数据A，那么就会出现请求R1副本能够获取数据A而请求R2无法获取数据A。
 
 ### 7.2 ISR(In-sync Replicas)
 
-简单来说isr就是`备胎版本的leader的集合`，当然leader副本本身就在这个集合里面。
+简单来说isr就是`leader的备胎集合`，当然leader副本本身就在这个集合里面。
 
 满足以下条件就会让副本进入到isr集合中
 
 > 1. replica.lag.time.max.ms;默认为10秒，当副本和能够在这个时间内保持和leader的心跳，那么就会被加入到isr中，相反会被从isr中提出去。
-> 2. 副本的数据一直在同步leader副本数据，并且同步的数据量满足要求的情况下，那么这个副本就具有了进入isr的资格。
->
-> 注意事项：
->
-> > kafka 0.9.0.0版本之前是用`replica.lag.max.messages`参数（落后于leader副本消息数）来控制副本是否能够进入isr。但是这样会造成isr中副本大量的进入或者被移除。
+> 
+>注意事项：
+> 
+>> kafka 0.9.0.0版本之前是用`replica.lag.max.messages`参数（落后于leader副本消息数）来控制副本是否能够进入isr。但是这样会造成isr中副本会频繁的进入isr或者被从isr中移除。
 > >
 > > 参考文章：https://developer.aliyun.com/article/918672
 
-## 8.无消息丢失配置是如何实现的
+## 8.如何配置才能实现kafka不丢失数据呢？
 
 消息的丢失无非有以下几种情况
 
-> 1. 生产者发送消息了成功了，但是并没有持久化到磁盘中。比如生产者使用异步的发送，而没有采用回调函数来进行检查是否真的发送成功。
-> 2. 由于消费者的消费策略或者消费组提交offset方式不合理而造成的消费者没有消费到数据。可比如一个分区从来没有提交过offset，而消费者设置的是latest模式。
-> 3. kafka中的数据过期。
+> 1. 生产者发送消息了成功了，但是并没有持久化到磁盘中。比如生产者使用异步的发送。
+> 2. 由于消费者的消费策略或者消费组提交offset方式不合理而造成的消费者没有消费到数据。可比如一个分区从来没有提交过offset，而消费者设置的是latest模式就有可能消费不到producer产生的数据。
+> 3. kafka中的数据过期，从而让consumer无法消费到数据。
 
-### 8.1 使用回调函数来确认producer一定把消息发送到broker中
+### 8.1 保障Producer一定把消息发送到broker并持久化到磁盘中
 
 > 并且设置acks=all;这样能保证isr分区中的所有副本都能够同步到该数据。
 >
-> 如果只是设置acks=1,可能会因为leader副本的无法访问而造成"数据丢失".
+> 如果只是设置acks=1,可能会因为leader副本失效而造成"数据丢失".
 
 ```java
 @Override
@@ -350,7 +353,7 @@ public void onCompletion(RecordMetadata metadata, Exception exception) {
 >
 > 比如现在一个topic有5个partition，同时有5个consumer来进行消费，并且这5个消费者提交offset的方式为自动提交。
 >
-> 这个时候比如有一个consumer处理数据异常，而这个时候自动提交的时间已到，从而提交了这一批数据的offset，从而造成"消息丢失"。从表面看起来像消息丢失而已，其实是因为处理消费的策略有问题。
+> 这个时候比如有一个自动提交的时间已到，然后进行了提交，而这个时候consumer逻辑还没有处理完，这时候发送了异常，从而提交了这一批数据的offset，从而造成"消息丢失"。从表面看起来像消息丢失而已，其实是因为处理消费的策略有问题。
 >
 > 解决方案：
 >
@@ -374,7 +377,7 @@ public void onCompletion(RecordMetadata metadata, Exception exception) {
 
 ## 9. Rebalance现象
 
-> Rebalance现象就是消费者重新获得具体消费哪些分区的过程。
+> Rebalance现象就是分配消费者消费哪些分区的过程。
 
 假设目前某个 Consumer Group 下有两个 Consumer，比如 A 和 B，当第三消费者 C 加入时，Kafka 会触发 Rebalance，并根据默认的分配策略重新为 A、B 和 C 分配分区，如下图所示：
 
@@ -398,7 +401,7 @@ public void onCompletion(RecordMetadata metadata, Exception exception) {
 
 如何尽可能的避免发生rebalance的发生呢？
 
-分区数的改变，和订阅主题数的改变，这里问题我们暂时不做考虑，因为这是由于我们业务需要而发生改变而引起的，我们重点分析是由于consumer端的问题导致的rebalance。
+分区数的改变，和订阅主题数的改变，这里问题我们暂时不做考虑，因为这是由于我们业务需要而发生改变而引起的我们暂时不做讨论，我们重点关注的是如何在consumer端代码层面来改善rebalance。
 
 下面是三种方式来进行改善rebalance的情况，请**注意只是改善而已**....
 
@@ -411,14 +414,14 @@ public void onCompletion(RecordMetadata metadata, Exception exception) {
 > - 设置 session.timeout.ms = 6s。
 > - 设置 heartbeat.interval.ms = 2s。
 >
-> 这样设置的目的就是在consumer被判定死之前，至少发送3次心跳。
+> 这样设置的目的就是在consumer被判定死之前，至少发送3次心跳。从而减少由于网络抖动而造成的consumer被从消费组中踢出去。
 
 第二种
 
 > 由于kafka的消费逻辑太长，而造成broker认为此consumer已经死亡，从而引发的rebalance，解决方案如下:
 >
 > - 设置max.poll.interval.ms长一些，比如处理逻辑需要10分钟，你设置成15分钟。
-> - 设置max.poll.records的最大条数小一些，从而造成消费的逻辑短一些。
+> - 设置max.poll.records的最大条数小一些，从而使消费的逻辑短一些。
 
 第三种
 
@@ -430,7 +433,7 @@ public void onCompletion(RecordMetadata metadata, Exception exception) {
 
 第四种
 
-> 当consumer不指定消费具体哪个分区的时候，才会引发rebalance.所以我们可以让consumer来消费某个分区的数据。
+> 当consumer不指定消费具体哪个分区的时候，才会引发rebalance.所以我们可以让consumer来消费指定的分区数据。
 >
 > 但是此方案可能会造成某个consumer服务宕机，从而造成某个分区的数据不会被消费掉。
 
@@ -479,7 +482,7 @@ public void onCompletion(RecordMetadata metadata, Exception exception) {
 > 1. 相比于其他消费队列其本身偏重，比较消耗资源，特别是内存。
 > 2. 缺失一些特性，比如事务的特性（kafka也确实有事务，但是他的事务是发送数据要不都成功，要么都失败，而不是业务上的事务）。
 
-## 12. 关于Kafka和Rocketmq对比的一些错误言论
+## 12. 市面上关于Kafka和Rocketmq对比的一些错误表述
 
 甚至有些阿里官方描述kafka和rocketmq的对比也有迷惑性的
 
@@ -527,3 +530,12 @@ https://www.infoq.com/news/2022/10/apache-kafka-kraft/
 - [kafka选举过程](https://cloud.tencent.com/developer/article/1790732)
 - 《深入理解kafka》
 - [BigData-Tutorial](https://dunwu.github.io/bigdata-tutorial/#zookeeper)
+
+
+
+## 15.Github地址
+
+```
+https://github.com/bulingfeng/kafka
+```
+
