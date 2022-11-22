@@ -45,25 +45,25 @@ offset有如下特点
 
 #### 3.4.1 消费组只有一个消费者
 
-![](./image/consumer-group/1-消费组一对一.png)
+![](.\image\consumer-group\1-一个消费者.jpg)
 
 #### 3.4.2 消费组内有2个消费者
 
-![](./image/consumer-group/2-消费者小于分区.png)
+![](.\image\consumer-group\2-多个消费者.jpg)
 
 #### 3.4.3 消费者和分区数一样多
 
-![](./image/consumer-group/3-消费者和分区一一对应.png)
+![](.\image\consumer-group\3-消费者数量和分区数一样.jpg)
 
 #### 3.4.4 组内消费者数量大于分区数量
 
-![](./image/consumer-group/4-消费者大于分区数量.png)
+![](.\image\consumer-group\4-消费者数大于分区数.jpg)
 
 
 
 #### 3.4.5 消费组与消费组之间的关系
 
-![](./image/consumer-group/5-消费组之间关系.png)
+![](.\image\consumer-group\5-消费者和分组直接的关系.jpg)
 
 ## 4.kafka安装与依赖组件
 
