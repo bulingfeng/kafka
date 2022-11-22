@@ -17,7 +17,7 @@ kafka是一个**高吞吐量、低延迟**的消息队列系统，源码由**jav
 
 ### 3.1 主题（topic）、生产者（producer）和分区（partition）
 
-![](.\image\2-kafka生产者.png)
+![](./image/2-kafka生产者.png)
 
 ### 3.2 消费者与消费组
 
